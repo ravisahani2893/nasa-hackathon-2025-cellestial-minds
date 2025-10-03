@@ -3,7 +3,7 @@ import csv
 import re
 import requests
 import json
-# import faiss
+import faiss
 import numpy as np
 import time
 
