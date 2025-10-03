@@ -3,18 +3,18 @@ import csv
 import re
 import requests
 import json
+!pip install faiss-cpu sentence-transformers
+import faiss
 import numpy as np
 import time
 
 
 def cleanup_data(text: str):
- 
-    
     # Normalize minus signs (U+2212 → hyphen)
     text = text.replace("−", "-")
 
     # Step 1: Decode Unicode escapes
-    # text = text.encode('utf-8').decode('unicode_escape')
+    text = text.encode('utf-8').decode('unicode_escape')
 
     # Step 2: Optional: Remove extra backslashes (if any)
     text = text.replace('\\', '')
@@ -42,10 +42,7 @@ def cleanup_data(text: str):
     return text
 
 def fetch_space_biology_data_bioc(pmcid: str):
-
-    
     url = f"https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi/BioC_json/{pmcid}/unicode"
-    # print(pmcid)
     response = requests.get(url)
 
     if response.status_code != 200:
@@ -54,7 +51,6 @@ def fetch_space_biology_data_bioc(pmcid: str):
 
     try:
         paper_json = response.json()
-        # print(paper_json)
     except Exception as e:
         print(f"Failed to parse JSON for {pmcid}: {e}")
         return None
@@ -64,19 +60,17 @@ def fetch_space_biology_data_bioc(pmcid: str):
     return paper_json
 
 
-
 url = "https://raw.githubusercontent.com/jgalazka/SB_publications/main/SB_publication_PMC.csv"
 df = pd.read_csv(url)
 
 
 def get_all_paper_data(df):
-
     paper_metadata = list()
     for index, row in df.iterrows():
         match = re.search(r'(PMC\d+)', row['Link'])
         if match:
-         pmc_id = match.group(1)
-         paper_metadata.append(pmc_id)
+            pmc_id = match.group(1)
+            paper_metadata.append(pmc_id)
 
     return paper_metadata     
 
@@ -85,10 +79,10 @@ table_metadata_ids = get_all_paper_data(df)
 
 def process_space_biology_data(metada_json_data):
     paragraph_data = metada_json_data[0]["documents"][0]
-    passsages =paragraph_data['passages']
+    passsages = paragraph_data['passages']
 
-
-    rows = []
+    # Dictionary to group by level_1 and level_2
+    grouped_data = {}
     current_l1 = None
     current_l2 = None
 
@@ -100,88 +94,56 @@ def process_space_biology_data(metada_json_data):
         if t == "title_1":
             current_l1 = text
             current_l2 = None
+            # Initialize the level_1 key if it doesn't exist
+            if current_l1 not in grouped_data:
+                grouped_data[current_l1] = {}
+                
         elif t == "title_2":
             current_l2 = text
+            # Initialize the level_2 key if it doesn't exist
+            if current_l1 and current_l2 not in grouped_data[current_l1]:
+                grouped_data[current_l1][current_l2] = []
+                
         elif t == "paragraph":
-            rows.append({
-            "level_1": current_l1,
-            "level_2": current_l2,
-            "text": text
-            })
+            if current_l1:
+                if current_l2:
+                    # Add text to level_2 subsection
+                    grouped_data[current_l1][current_l2].append(text)
+                else:
+                    # Add text directly under level_1 (no subsection)
+                    if "main_content" not in grouped_data[current_l1]:
+                        grouped_data[current_l1]["main_content"] = []
+                    grouped_data[current_l1]["main_content"].append(text)
 
+    return grouped_data
 
-    return rows
 
 def fetch_all_nasa_metadata_info(metadata_list):
+    metadata_raw_json_response_list = list()
 
-    metadata_raw_json_response_list=list()
-
-    raw_json_data=fetch_space_biology_data_bioc(metadata_list[1])
-    space_engine_processed_data = process_space_biology_data(raw_json_data)
-    row_json = json.dumps(space_engine_processed_data,indent=2,ensure_ascii=False)
-
-
-    print(row_json)
-
-    # for metadata_id in metadata_list:
-    #     raw_json_data=fetch_space_biology_data_bioc(metadata_id)
-        
+    # Process first paper for testing
+    # raw_json_data = fetch_space_biology_data_bioc(metadata_list[1])
+    # if raw_json_data:
     #     space_engine_processed_data = process_space_biology_data(raw_json_data)
+    #     row_json = json.dumps(space_engine_processed_data, indent=2)
+    #     print(row_json)
+    #     metadata_raw_json_response_list.append(space_engine_processed_data)
 
-    #     try:
-    #         raw_json_data = json.loads(space_engine_processed_data)
-    #         print("Valid JSON")
-    #     except json.JSONDecodeError:
-    #         print("Invalid JSON")
+    # Uncomment to process all papers
+    for metadata_id in metadata_list:
+        raw_json_data = fetch_space_biology_data_bioc(metadata_id)
+        if raw_json_data:
+            space_engine_processed_data = process_space_biology_data(raw_json_data)
+            metadata_raw_json_response_list.append(space_engine_processed_data)
+            print(f"Processed {metadata_id}")
 
-    #     metadata_raw_json_response_list.append(raw_json_data)
-
-
-    # return metadata_raw_json_response_list  
-
-
-metadata_raw_json_response_list=fetch_all_nasa_metadata_info(table_metadata_ids)
-
-
-# print(metadata_raw_json_response_list[0])
+    return metadata_raw_json_response_list  
 
 
+metadata_raw_json_response_list = fetch_all_nasa_metadata_info(table_metadata_ids)
 
-
-    
-
-# paper3_response = fetch_space_biology_data_bioc("PMC11988870")
-
-
-
-# structured = {}
-# stack = []  # keep track of nested titles
-# paragraph_data = paper3_response[0]["documents"][0]
-# passsages =paragraph_data['passages']
-
-
-# rows = []
-# current_l1 = None
-# current_l2 = None
-
-# for item in passsages:
-#     passagge_data = item["text"]
-#     t = item['infons']['type']
-#     text = cleanup_data(passagge_data)
-
-#     if t == "title_1":
-#         current_l1 = text
-#         current_l2 = None
-#     elif t == "title_2":
-#             current_l2 = text
-#     elif t == "paragraph":
-#         rows.append({
-#             "level_1": current_l1,
-#             "level_2": current_l2,
-#             "text": text
-#         })
-
-
-# row_json = json.dumps(rows)        
-
-# print(row_json)
+# Save to file
+if metadata_raw_json_response_list:
+    with open('grouped_papers.json', 'w', encoding='utf-8') as f:
+        json.dump(metadata_raw_json_response_list, f, indent=2, ensure_ascii=False)
+    print("\nSaved to grouped_papers.json")
