@@ -27,7 +27,7 @@ def extract_triplets_full_hierarchy(json_obj, parent_keys=None):
     return triplets
 
 # --- Read JSON from file ---
-json_file_path = "/content/structured_data.json"  # Replace with your file path
+json_file_path = "jsonfiles/structured_data.json"  # Replace with your file path
 with open(json_file_path, "r", encoding="utf-8") as f:
     nested_json = json.load(f)
 
